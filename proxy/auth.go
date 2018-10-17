@@ -25,8 +25,7 @@ type authenticator interface {
 }
 
 // GSSAPIAuthenticate ...
-type GSSAPIAuthenticate struct {
-}
+type GSSAPIAuthenticate struct{}
 
 // UserPasswd ...
 type UserPasswd struct {

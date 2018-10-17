@@ -61,14 +61,60 @@ func (s *Session) readMethods() ([]byte, error) {
 
 // ServeRequest ...
 func (s *Session) ServeRequest(ctx context.Context) error {
-	return nil
+	req, err := NewReuqest(s)
+	if err != nil {
+		return err
+	}
+
+	switch req.Cmd {
+	case CmdConnect:
+		err = s.handleCmdConnect(ctx, req)
+	case CmdBind:
+		err = s.handleCmdBind()
+	case CmdUDPProcess:
+		err = s.handleCmdUDPProcess()
+	}
+	return err
 }
 
-// HandleRequest ...
-func (s *Session) HandleRequest() error {
-	return nil
-}
+/*
+   In the reply to a CONNECT, BND.PORT contains the port number that the
+   server assigned to connect to the target host, while BND.ADDR
+   contains the associated IP address.  The supplied BND.ADDR is often
+   different from the IP address that the client uses to reach the SOCKS
+   server, since such servers are often multi-homed.  It is expected
+   that the SOCKS server will use DST.ADDR and DST.PORT, and the
+   client-side source address and port in evaluating the CONNECT
+   request.
 
-func (s *Session) readClientAddr(ctx context.Context) error {
+        +----+-----+-------+------+----------+----------+
+        |VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT |
+        +----+-----+-------+------+----------+----------+
+        | 1  |  1  | X'00' |  1   | Variable |    2     |
+        +----+-----+-------+------+----------+----------+
+*/
+func (s *Session) handleCmdConnect(ctx context.Context, req *Request) error {
+	addr := net.JoinHostPort(string(req.DstAddr), string(req.DstPort))
+	target, err := net.Dial("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer target.Close()
+
+	errCh := make(chan error, 2)
+	proxy := func(dst io.Writer, src io.Reader) {
+		defer target.Close()
+		_, err := io.Copy(target, s.Conn)
+		errCh <- err
+	}
+	go proxy(s.Conn, target)
+	go proxy(target, s.Conn)
+
+	for i := 0; i < 2; i++ {
+		err := <-errCh
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
