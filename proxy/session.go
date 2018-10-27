@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"strconv"
 )
 
 // Session is the session of negotiation
@@ -66,7 +67,7 @@ func (s *Session) ServeRequest(ctx context.Context) error {
 		return err
 	}
 
-	switch req.Cmd {
+	switch req.Command {
 	case CmdConnect:
 		err = s.handleCmdConnect(ctx, req)
 	case CmdBind:
@@ -94,7 +95,7 @@ func (s *Session) ServeRequest(ctx context.Context) error {
         +----+-----+-------+------+----------+----------+
 */
 func (s *Session) handleCmdConnect(ctx context.Context, req *Request) error {
-	addr := net.JoinHostPort(string(req.DstAddr), string(req.DstPort))
+	addr := net.JoinHostPort(string(req.DestAddr.IP), strconv.Itoa(req.DestAddr.Port))
 	target, err := net.Dial("tcp", addr)
 	if err != nil {
 		return err

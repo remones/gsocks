@@ -76,9 +76,9 @@ func readRequest(r io.Reader) (*Request, error) {
 
 func readAddrSpec(r io.Reader) (*AddrSpec, error) {
 	addr := new(AddrSpec)
-	h := make([]byte, 1)
+	h := make([]byte, 2)
 
-	if _, err := r.Read(h); err != nil {
+	if _, err := r.Read(h[:1]); err != nil {
 		return nil, err
 	}
 	switch h[0] {
@@ -107,6 +107,11 @@ func readAddrSpec(r io.Reader) (*AddrSpec, error) {
 	default:
 		return nil, fmt.Errorf("Unknow AType: %d", h[0])
 	}
+	// Read Port
+	if _, err := io.ReadAtLeast(r, h, 2); err != nil {
+		return nil, err
+	}
+	addr.Port = (int(h[0])<<8 | int(h[1]))
 	return addr, nil
 }
 
