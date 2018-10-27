@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+// Auth ...
 const (
 	AuthNoRequried  = uint8(0x00)
 	AuthGSSAPI      = uint8(0x01)
@@ -13,6 +14,7 @@ const (
 	AuthNoAccetable = uint8(0xFF)
 )
 
+// UserPass ...
 const (
 	UserPassSuccess = uint8(0x01)
 	UserPassFailure = uint8(0x00)
@@ -30,7 +32,7 @@ type GSSAPIAuthenticate struct{}
 // UserPasswd ...
 type UserPasswd struct {
 	username string
-	passwd   string
+	password string
 }
 
 // UserPassAuthenticator ...
@@ -41,7 +43,7 @@ type UserPassAuthenticator struct {
 
 // Authenticate ...
 func (auth *UserPassAuthenticator) Authenticate(r io.Reader, w io.Writer) (ok bool, err error) {
-	header := make([]byte, 0, 2)
+	header := make([]byte, 2)
 	if _, err := r.Read(header); err != nil {
 		return false, err
 	}
@@ -50,7 +52,7 @@ func (auth *UserPassAuthenticator) Authenticate(r io.Reader, w io.Writer) (ok bo
 		return false, fmt.Errorf("Invalid version")
 	}
 	ulen := int(header[1])
-	user := make([]byte, 0, ulen)
+	user := make([]byte, ulen)
 	if _, err := io.ReadAtLeast(r, user, ulen); err != nil {
 		return false, err
 	}
@@ -58,7 +60,7 @@ func (auth *UserPassAuthenticator) Authenticate(r io.Reader, w io.Writer) (ok bo
 		return false, err
 	}
 	plen := int(header[0])
-	passwd := make([]byte, 0, plen)
+	passwd := make([]byte, plen)
 	if _, err := io.ReadAtLeast(r, passwd, plen); err != nil {
 		return false, err
 	}
@@ -69,7 +71,7 @@ func (auth *UserPassAuthenticator) Authenticate(r io.Reader, w io.Writer) (ok bo
 
 func (auth *UserPassAuthenticator) verifyAccount(username, passwd string) (status uint8) {
 	for _, account := range auth.accounts {
-		if strings.Compare(username, account.username) == 0 && strings.Compare(passwd, account.passwd) == 0 {
+		if strings.Compare(username, account.username) == 0 && strings.Compare(passwd, account.password) == 0 {
 			return UserPassSuccess
 		}
 	}

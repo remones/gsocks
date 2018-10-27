@@ -71,15 +71,3 @@ func (s *server) serveSession(ctx context.Context, conn net.Conn) error {
 	}
 	return sess.ServeRequest(ctx)
 }
-
-func (s *server) Stop() {
-	s.quitOnce.Do(func() {
-		close(s.quit)
-	})
-	defer func() {
-		s.wg.Wait()
-		s.doneOnce.Do(func() {
-			close(s.done)
-		})
-	}()
-}

@@ -70,9 +70,9 @@ func (s *Session) ServeRequest(ctx context.Context) error {
 	case CmdConnect:
 		err = s.handleCmdConnect(ctx, req)
 	case CmdBind:
-		err = s.handleCmdBind()
-	case CmdUDPProcess:
-		err = s.handleCmdUDPProcess()
+		err = s.handleCmdBind(ctx, req)
+	case CmdUDPAssociate:
+		err = s.handleCmdUDPProcess(ctx, req)
 	}
 	return err
 }
@@ -116,5 +116,13 @@ func (s *Session) handleCmdConnect(ctx context.Context, req *Request) error {
 			return err
 		}
 	}
+	return nil
+}
+
+func (s *Session) handleCmdBind(ctx context.Context, req *Request) error {
+	return nil
+}
+
+func (s *Session) handleCmdUDPProcess(ctx context.Context, req *Request) error {
 	return nil
 }
