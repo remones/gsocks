@@ -2,8 +2,10 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
+	"runtime"
 	"strconv"
 )
 
@@ -68,6 +70,8 @@ func (s *Session) ServeRequest(ctx context.Context) error {
 		err = s.handleCmdBind(ctx, req)
 	case CmdUDPAssociate:
 		err = s.handleCmdUDPProcess(ctx, req)
+	default:
+		err = fmt.Errorf("Invalid Request Command: %#x", req.Command)
 	}
 	return err
 }
@@ -89,6 +93,7 @@ func (s *Session) ServeRequest(ctx context.Context) error {
         +----+-----+-------+------+----------+----------+
 */
 func (s *Session) handleCmdConnect(ctx context.Context, req *Request) error {
+	runtime.Breakpoint()
 	addr := net.JoinHostPort(string(req.DestAddr.IP), strconv.Itoa(req.DestAddr.Port))
 	target, err := net.Dial("tcp", addr)
 	if err != nil {

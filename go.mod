@@ -1,6 +1,7 @@
 module github.com/remones/gsocks
 
 require (
+	github.com/client9/misspell v0.3.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect

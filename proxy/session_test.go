@@ -2,7 +2,11 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -59,28 +63,33 @@ func TestSession_Authenticate(t *testing.T) {
 }
 
 func TestSession_ServeRequest(t *testing.T) {
-	type fields struct {
-		Conn net.Conn
+	backendSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "his call was relayed by the reverse proxy")
+	}))
+	defer backendSrv.Close()
+	server, client := net.Pipe()
+	defer server.Close()
+
+	s := &Session{
+		Conn: server,
 	}
-	type args struct {
-		ctx context.Context
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := &Session{
-				Conn: tt.fields.Conn,
-			}
-			if err := s.ServeRequest(tt.args.ctx); (err != nil) != tt.wantErr {
-				t.Errorf("Session.ServeRequest() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
+	go func() {
+		defer client.Close()
+		addr := backendSrv.Listener.Addr().String()
+		_, port, _ := net.SplitHostPort(addr)
+		nPort, _ := strconv.Atoi(port)
+		bPort := make([]byte, 2)
+		bPort[0] = uint8(nPort >> 8)
+		bPort[1] = uint8(nPort & 255)
+		cmd := []byte{5, 1, 0, 1, 127, 0, 0, 1, bPort[0], bPort[1]}
+		_, err := client.Write(cmd)
+		assert.NoError(t, err)
+
+		req := []byte("GET / HTTP/1.1\r\n")
+		_, err = client.Write(req)
+		assert.NoError(t, err)
+	}()
+
+	ctx := context.Background()
+	s.ServeRequest(ctx)
 }
