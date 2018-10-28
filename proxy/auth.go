@@ -16,14 +16,15 @@ const (
 
 // UserPass ...
 const (
-	UserPassSuccess = uint8(0x01)
-	UserPassFailure = uint8(0x00)
+	UserPassSuccess = uint8(0x00)
+	UserPassFailure = uint8(0x01)
 )
 
-var authenticators map[uint8]authenticator
+var authenticators = make(map[uint8]Authenticator)
 
-type authenticator interface {
-	Authenticate(r io.Reader) (ok bool, err error)
+// Authenticator ...
+type Authenticator interface {
+	Authenticate(rw io.ReadWriter) (ok bool, err error)
 }
 
 // GSSAPIAuthenticate ...
@@ -37,35 +38,34 @@ type UserPasswd struct {
 
 // UserPassAuthenticator ...
 type UserPassAuthenticator struct {
-	version  uint8
 	accounts []*UserPasswd
 }
 
 // Authenticate ...
-func (auth *UserPassAuthenticator) Authenticate(r io.Reader, w io.Writer) (ok bool, err error) {
+func (auth *UserPassAuthenticator) Authenticate(rw io.ReadWriter) (ok bool, err error) {
 	header := make([]byte, 2)
-	if _, err := r.Read(header); err != nil {
+	if _, err := rw.Read(header); err != nil {
 		return false, err
 	}
 	ver := uint8(header[0])
-	if ver != auth.version {
+	if ver != Socks5Version {
 		return false, fmt.Errorf("Invalid version")
 	}
 	ulen := int(header[1])
 	user := make([]byte, ulen)
-	if _, err := io.ReadAtLeast(r, user, ulen); err != nil {
+	if _, err := io.ReadAtLeast(rw, user, ulen); err != nil {
 		return false, err
 	}
-	if _, err := r.Read(header[:1]); err != nil {
+	if _, err := rw.Read(header[:1]); err != nil {
 		return false, err
 	}
 	plen := int(header[0])
 	passwd := make([]byte, plen)
-	if _, err := io.ReadAtLeast(r, passwd, plen); err != nil {
+	if _, err := io.ReadAtLeast(rw, passwd, plen); err != nil {
 		return false, err
 	}
 	status := auth.verifyAccount(string(user), string(passwd))
-	w.Write([]byte{auth.version, status})
+	rw.Write([]byte{Socks5Version, status})
 	return status == UserPassSuccess, nil
 }
 

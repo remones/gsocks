@@ -10,23 +10,16 @@ import (
 // Session is the session of negotiation
 type Session struct {
 	net.Conn
-	ver uint8
 }
 
 func newSession(c net.Conn, version uint8) *Session {
 	return &Session{
 		Conn: c,
-		ver:  version,
 	}
 }
 
-// Version returns the version of socks support
-func (s *Session) Version() uint8 {
-	return s.ver
-}
-
 // Authenticate ...
-func (s *Session) Authenticate() (ok bool, err error) {
+func (s *Session) Authenticate() (bool, error) {
 	methods, err := s.readMethods()
 	if err != nil {
 		return false, err
@@ -37,14 +30,15 @@ func (s *Session) Authenticate() (ok bool, err error) {
 			if err != nil {
 				return false, err
 			}
-			return auth.Authenticate(s.Conn)
+			status, err := auth.Authenticate(s.Conn)
+			return status, err
 		}
 	}
 	return false, nil
 }
 
 func (s *Session) ackMethod(method byte) error {
-	_, err := s.Write([]byte{s.ver, method})
+	_, err := s.Write([]byte{Socks5Version, method})
 	return err
 }
 
@@ -120,10 +114,12 @@ func (s *Session) handleCmdConnect(ctx context.Context, req *Request) error {
 	return nil
 }
 
+// TODO(remones)
 func (s *Session) handleCmdBind(ctx context.Context, req *Request) error {
 	return nil
 }
 
+// TODO(remones)
 func (s *Session) handleCmdUDPProcess(ctx context.Context, req *Request) error {
 	return nil
 }

@@ -13,7 +13,7 @@ const Socks5Version = uint8(0x5)
 type server struct {
 	wg             sync.WaitGroup
 	quitOnce       sync.Once
-	authenticators map[byte]authenticator
+	authenticators map[byte]Authenticator
 }
 
 func newServer() *server {
