@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"runtime"
 	"strconv"
 )
 
@@ -93,7 +92,6 @@ func (s *Session) ServeRequest(ctx context.Context) error {
         +----+-----+-------+------+----------+----------+
 */
 func (s *Session) handleCmdConnect(ctx context.Context, req *Request) error {
-	runtime.Breakpoint()
 	addr := net.JoinHostPort(string(req.DestAddr.IP), strconv.Itoa(req.DestAddr.Port))
 	target, err := net.Dial("tcp", addr)
 	if err != nil {
