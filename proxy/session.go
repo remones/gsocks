@@ -100,6 +100,7 @@ func (s *Session) handleCmdConnect(ctx context.Context, req *Request) error {
 	}
 	defer target.Close()
 
+<<<<<<< HEAD
 	errCh := make(chan error)
 	proxy := func(dst io.Writer, src io.Reader, dstName, srcName string) {
 		_, err := io.Copy(dst, src)
@@ -107,6 +108,16 @@ func (s *Session) handleCmdConnect(ctx context.Context, req *Request) error {
 	}
 	go proxy(target, s.Conn, "target", "s.Conn")
 	go proxy(s.Conn, target, "s.Conn", "target")
+=======
+	errCh := make(chan error, 2)
+	proxy := func(dst io.Writer, src io.Reader) {
+		defer target.Close()
+		_, err := io.Copy(dst, src)
+		errCh <- err
+	}
+	go proxy(target, s.Conn)
+	go proxy(s.Conn, target)
+>>>>>>> Add more test for connect command
 
 	select {
 	case <-ctx.Done():
