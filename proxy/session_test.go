@@ -2,10 +2,7 @@ package proxy
 
 import (
 	"context"
-	"fmt"
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"strconv"
 	"testing"
 
@@ -63,33 +60,53 @@ func TestSession_Authenticate(t *testing.T) {
 }
 
 func TestSession_ServeRequest(t *testing.T) {
-	backendSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "his call was relayed by the reverse proxy")
-	}))
-	defer backendSrv.Close()
-	server, client := net.Pipe()
-	defer server.Close()
-
-	s := &Session{
-		Conn: server,
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
 	}
-	go func() {
-		defer client.Close()
-		addr := backendSrv.Listener.Addr().String()
-		_, port, _ := net.SplitHostPort(addr)
-		nPort, _ := strconv.Atoi(port)
-		bPort := make([]byte, 2)
-		bPort[0] = uint8(nPort >> 8)
-		bPort[1] = uint8(nPort & 255)
-		cmd := []byte{5, 1, 0, 1, 127, 0, 0, 1, bPort[0], bPort[1]}
-		_, err := client.Write(cmd)
-		assert.NoError(t, err)
+	backendAddr := ln.Addr().String()
+	defer ln.Close()
 
-		req := []byte("GET / HTTP/1.1\r\n")
-		_, err = client.Write(req)
-		assert.NoError(t, err)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+
+		req := make([]byte, 13)
+		conn.Read(req)
+		assert.Equal(t, "hello, world!", string(req))
+		if _, err = conn.Write([]byte("hello, world!")); err != nil {
+			assert.NoError(t, err)
+		}
 	}()
 
-	ctx := context.Background()
-	s.ServeRequest(ctx)
+	server, client := net.Pipe()
+	go func() {
+		defer server.Close()
+		s := &Session{
+			Conn: server,
+		}
+		s.ServeRequest(context.TODO())
+	}()
+
+	defer client.Close()
+	_, port, _ := net.SplitHostPort(backendAddr)
+	nPort, _ := strconv.Atoi(port)
+	bPort := make([]byte, 2)
+	bPort[0] = uint8(nPort >> 8)
+	bPort[1] = uint8(nPort & 255)
+	cmd := []byte{5, 1, 0, 1, 127, 0, 0, 1, bPort[0], bPort[1]}
+	_, err = client.Write(cmd)
+	assert.NoError(t, err)
+
+	req := []byte("hello, world!")
+	_, err = client.Write(req)
+	assert.NoError(t, err)
+
+	rsp := make([]byte, 13)
+	_, err = client.Read(rsp)
+	assert.NoError(t, err)
+	assert.Equal(t, "hello, world!", string(rsp))
 }

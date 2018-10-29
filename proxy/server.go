@@ -38,6 +38,7 @@ func (s *server) Serve(ln net.Listener) (err error) {
 		s.wg.Add(1)
 		go func(c net.Conn) {
 			defer s.wg.Done()
+			defer conn.Close()
 			s.serveSession(ctx, c) // # TODO: log the error
 		}(conn)
 	}

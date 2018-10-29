@@ -91,30 +91,31 @@ func (s *Session) ServeRequest(ctx context.Context) error {
         | 1  |  1  | X'00' |  1   | Variable |    2     |
         +----+-----+-------+------+----------+----------+
 */
+// TODO: need use context
 func (s *Session) handleCmdConnect(ctx context.Context, req *Request) error {
-	addr := net.JoinHostPort(string(req.DestAddr.IP), strconv.Itoa(req.DestAddr.Port))
+	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(req.DestAddr.Port))
 	target, err := net.Dial("tcp", addr)
 	if err != nil {
 		return err
 	}
 	defer target.Close()
 
-	errCh := make(chan error, 2)
-	proxy := func(dst io.Writer, src io.Reader) {
-		defer target.Close()
-		_, err := io.Copy(target, s.Conn)
+	errCh := make(chan error)
+	proxy := func(dst io.Writer, src io.Reader, dstName, srcName string) {
+		_, err := io.Copy(dst, src)
 		errCh <- err
 	}
-	go proxy(s.Conn, target)
-	go proxy(target, s.Conn)
+	go proxy(target, s.Conn, "target", "s.Conn")
+	go proxy(s.Conn, target, "s.Conn", "target")
 
-	for i := 0; i < 2; i++ {
-		err := <-errCh
-		if err != nil {
-			return err
-		}
+	select {
+	case <-ctx.Done():
+		s.Close()
+		err = ctx.Err()
+	case nErr := <-errCh:
+		err = nErr
 	}
-	return nil
+	return err
 }
 
 // TODO(remones)
