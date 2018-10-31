@@ -59,7 +59,7 @@ func TestSession_Authenticate(t *testing.T) {
 	assert.Equal(t, true, gotOk)
 }
 
-func TestSession_ServeRequest(t *testing.T) {
+func TestSession_ServeConnectCommand(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
