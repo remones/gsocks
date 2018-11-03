@@ -1,9 +1,11 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
+	"strconv"
 )
 
 // Command type of request
@@ -20,58 +22,26 @@ const (
 	TypeIPV6 = uint8(0x04)
 )
 
-// Reply ...
-const (
-	ReplySuccessed          = uint8(0x00)
-	ReplyFailure            = uint8(0x01)
-	ReplyNotAllowed         = uint8(0x02)
-	ReplyNetworkUnreachable = uint8(0x03)
-	ReplyHostUnreachable    = uint8(0x04)
-	ReplyConnectionRefused  = uint8(0x05)
-	ReplyTTLExpired         = uint8(0x06)
-	ReplyInvalidCommand     = uint8(0x07)
-	ReplyInvalidAddressType = uint8(0x08)
-	ReplyUnassigned         = uint8(0x09)
+var (
+	resolver = net.DefaultResolver
 )
+
+// SetResovler sets a custom resolver to replace the original resolver which default is net.DefaultResolver
+func SetResovler(r *net.Resolver) {
+	resolver = r
+}
 
 // AddrSpec ...
 type AddrSpec struct {
 	FQDN string
 	IP   net.IP
 	Port int
+	Type uint8
 }
 
-// Request ...
-type Request struct {
-	Version    uint8
-	Command    uint8
-	RemoteAddr *AddrSpec
-	DestAddr   *AddrSpec
-}
-
-// NewReuqest ...
-func NewReuqest(r io.Reader) (*Request, error) {
-	return readRequest(r)
-}
-
-func readRequest(r io.Reader) (*Request, error) {
-	header := make([]byte, 3)
-	_, err := r.Read(header)
-	if err != nil {
-		return nil, err
-	}
-	ver := header[0]
-	cmd := header[1]
-	dest, err := readAddrSpec(r)
-	if err != nil {
-		return nil, err
-	}
-	req := &Request{
-		Version:  ver,
-		Command:  cmd,
-		DestAddr: dest,
-	}
-	return req, nil
+// NewAddrSpec ...
+func NewAddrSpec(r io.Reader) (*AddrSpec, error) {
+	return readAddrSpec(r)
 }
 
 func readAddrSpec(r io.Reader) (*AddrSpec, error) {
@@ -105,14 +75,62 @@ func readAddrSpec(r io.Reader) (*AddrSpec, error) {
 		}
 		addr.FQDN = string(buf)
 	default:
-		return nil, fmt.Errorf("Unknow AType: %d", h[0])
+		return nil, fmt.Errorf("Unknow Address Type: %d", h[0])
 	}
 	// Read Port
 	if _, err := io.ReadAtLeast(r, h, 2); err != nil {
 		return nil, err
 	}
+	addr.Type = h[0]
 	addr.Port = (int(h[0])<<8 | int(h[1]))
 	return addr, nil
+}
+
+// Resolve ...
+func (as *AddrSpec) Resolve(ctx context.Context) (string, error) {
+	var ip = as.IP.String()
+	if as.FQDN != "" {
+		ips, err := resolver.LookupHost(ctx, as.FQDN)
+		if err != nil {
+			return "", err
+		}
+		ip = ips[0]
+	}
+	addr := net.JoinHostPort(ip, strconv.Itoa(as.Port))
+	return addr, nil
+}
+
+// Request ...
+type Request struct {
+	Version    uint8
+	Command    uint8
+	RemoteAddr *AddrSpec
+	DestAddr   *AddrSpec
+}
+
+// NewReuqest ...
+func NewReuqest(r io.Reader) (*Request, error) {
+	return readRequest(r)
+}
+
+func readRequest(r io.Reader) (*Request, error) {
+	header := make([]byte, 3)
+	_, err := r.Read(header)
+	if err != nil {
+		return nil, err
+	}
+	ver := header[0]
+	cmd := header[1]
+	dest, err := NewAddrSpec(r)
+	if err != nil {
+		return nil, err
+	}
+	req := &Request{
+		Version:  ver,
+		Command:  cmd,
+		DestAddr: dest,
+	}
+	return req, nil
 }
 
 // NewReply ...

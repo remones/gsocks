@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strconv"
 	"testing"
@@ -64,8 +65,9 @@ func TestSession_ServeConnectCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	backendAddr := ln.Addr().String()
 	defer ln.Close()
+	backendAddr := ln.Addr().String()
+    fmt.Printf("======= backendAddr: %s\n", backendAddr)
 
 	go func() {
 		conn, err := ln.Accept()
@@ -75,11 +77,12 @@ func TestSession_ServeConnectCommand(t *testing.T) {
 		defer conn.Close()
 
 		req := make([]byte, 13)
+        fmt.Println("before tcp server read")
 		conn.Read(req)
+        fmt.Println("after tcp server read")
 		assert.Equal(t, "hello, world!", string(req))
-		if _, err = conn.Write([]byte("hello, world!")); err != nil {
-			assert.NoError(t, err)
-		}
+		_, err = conn.Write([]byte("hello, world!"))
+		assert.NoError(t, err)
 	}()
 
 	server, client := net.Pipe()
