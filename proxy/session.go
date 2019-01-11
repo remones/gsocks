@@ -120,7 +120,6 @@ func (s *Session) handleCmdConnect(ctx context.Context, req *Request) error {
 
 	target, err := net.Dial("tcp", addr)
 	if err != nil {
-        fmt.Printf("======== dial err(%s): %s\n", addr, err)
 		errMsg := err.Error()
 		resp := ReplyHostUnreachable
 		if strings.Contains(errMsg, "refused") {
