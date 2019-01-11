@@ -6,3 +6,4 @@ sudo: false
 
 install:
   - make build
+script: make test
