@@ -2,10 +2,13 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // ReplyCode ...
@@ -25,14 +28,23 @@ const (
 	ReplyUnassigned         = ReplyCode(0x09)
 )
 
+// errors ...
+var (
+	ErrSendReplyFailed  = errors.New("sends a reply failed")
+	ErrBindSocketFailed = errors.New("binds a socket failed")
+	ErrResolverFailed   = errors.New("resolve remote address failed")
+)
+
 // Session is the session of negotiation
 type Session struct {
+	timeout time.Duration
 	net.Conn
 }
 
-func newSession(c net.Conn, version uint8) *Session {
+func newSession(c net.Conn, version uint8, timeout time.Duration) *Session {
 	return &Session{
-		Conn: c,
+		timeout: timeout,
+		Conn:    c,
 	}
 }
 
@@ -85,7 +97,7 @@ func (s *Session) ServeRequest(ctx context.Context) error {
 	case CmdBind:
 		err = s.handleCmdBind(ctx, req)
 	case CmdUDPAssociate:
-		err = s.handleCmdUDPProcess(ctx, req)
+		err = s.handleCmdUDP(ctx, req)
 	default:
 		s.sendReply(ReplyInvalidCommand, nil)
 		err = fmt.Errorf("Invalid Request Command: %#x", req.Command)
@@ -113,12 +125,15 @@ func (s *Session) handleCmdConnect(ctx context.Context, req *Request) error {
 	addr, err := req.DestAddr.Resolve(ctx)
 	if err != nil {
 		if rErr := s.sendReply(ReplyHostUnreachable, nil); rErr != nil {
-			return fmt.Errorf("Failed to send reply: %v", rErr)
+			// TODO: add log here
+			return ErrSendReplyFailed
 		}
-		return fmt.Errorf("Failed to resolve destination address: %v", err)
+		// TODO: need more log
+		return ErrResolverFailed
 	}
 
-	target, err := net.Dial("tcp", addr)
+	dialer := net.Dialer{Timeout: s.timeout}
+	target, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		errMsg := err.Error()
 		resp := ReplyHostUnreachable
@@ -128,9 +143,11 @@ func (s *Session) handleCmdConnect(ctx context.Context, req *Request) error {
 			resp = ReplyNetworkUnreachable
 		}
 		if rErr := s.sendReply(resp, nil); rErr != nil {
-			return fmt.Errorf("Failed to send reply: %v", rErr)
+			// TODO: add log here
+			return ErrSendReplyFailed
 		}
-		return fmt.Errorf("Failed to dial destination(%v): %v", addr, err)
+		// TODO: add log here
+		return ErrResolverFailed
 	}
 	defer target.Close()
 
@@ -141,6 +158,81 @@ func (s *Session) handleCmdConnect(ctx context.Context, req *Request) error {
 	}
 	go proxy(target, s.Conn)
 	go proxy(s.Conn, target)
+
+	select {
+	case <-ctx.Done():
+		s.Close()
+		err = ctx.Err()
+	case nErr := <-errCh:
+		err = nErr
+	}
+	return err
+}
+
+func (s *Session) handleCmdBind(ctx context.Context, req *Request) error {
+	addr, err := req.DestAddr.Resolve(ctx)
+	if err != nil {
+		if rErr := s.sendReply(ReplyHostUnreachable, nil); rErr != nil {
+			return fmt.Errorf("faild to send reply: %v", rErr)
+		}
+		return fmt.Errorf("faild to resolve destination address: %v", err)
+	}
+
+	dialer := net.Dialer{Timeout: s.timeout}
+	target, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		errMsg := err.Error()
+		resp := ReplyHostUnreachable
+		if strings.Contains(errMsg, "refused") {
+			resp = ReplyConnectionRefused
+		} else if strings.Contains(errMsg, "network is unreachable") {
+			resp = ReplyNetworkUnreachable
+		}
+		if rErr := s.sendReply(resp, nil); rErr != nil {
+			return fmt.Errorf("faild to send reply: %v", rErr)
+		}
+		return fmt.Errorf("faild to dial destination(%v): %v", addr, err)
+	}
+	defer target.Close()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		// TODO: should add log here
+		if rErr := s.sendReply(ReplyUnassigned, nil); err != nil {
+			return ErrSendReplyFailed
+		}
+		return err
+	}
+
+	lnhost, lnport, _ := net.SplitHostPort(ln.Addr().String())
+	port, _ := strconv.Atoi(lnport)
+	as := &AddrSpec{
+		IP:   net.IP(lnhost),
+		Port: port,
+		Type: TypeIPV4,
+	}
+	s.sendReply(ReplySuccessed, as)
+	// TODO: send first reply here
+	conn, err := ln.Accept()
+	if err != nil {
+		// TODO: should add log here, and sendReply
+		if rErr := s.sendReply(ReplyFailure, nil); err != nil {
+			return ErrSendReplyFailed
+		}
+		return err
+	} else {
+		if rErr := s.sendReply(ReplySuccessed, nil); err != nil {
+			return ErrSendReplyFailed
+		}
+	}
+
+	errCh := make(chan error)
+	proxy := func(dst io.Writer, src io.Reader) {
+		_, err := io.Copy(dst, src)
+		errCh <- err
+	}
+	go proxy(conn, target)
+	go proxy(target, conn)
 
 	select {
 	case <-ctx.Done():
@@ -195,12 +287,8 @@ func (s *Session) sendReply(code ReplyCode, addr *AddrSpec) error {
 	return err
 }
 
-// TODO(remones)
-func (s *Session) handleCmdBind(ctx context.Context, req *Request) error {
-	return nil
-}
-
-// TODO(remones)
-func (s *Session) handleCmdUDPProcess(ctx context.Context, req *Request) error {
+// TODO(remones): listen on a UDP port
+func (s *Session) handleCmdUDP(ctx context.Context, req *Request) error {
+	//
 	return nil
 }

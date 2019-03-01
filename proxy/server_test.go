@@ -10,7 +10,6 @@ import (
 func Test_server_ListenAndServe(t *testing.T) {
 	type fields struct {
 		addr           string
-		listener       net.Listener
 		mu             sync.Mutex
 		waitConns      sync.WaitGroup
 		inShutdown     int32
@@ -22,13 +21,19 @@ func Test_server_ListenAndServe(t *testing.T) {
 		fields  fields
 		wantErr bool
 	}{
-		// TODO: Add test cases.
+		{
+			name: "normal success",
+			fields: fields{
+				addr:      "127.0.0.1:0",
+				waitConns: sync.WaitGroup{},
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := &server{
 				addr:           tt.fields.addr,
-				listener:       tt.fields.listener,
 				mu:             tt.fields.mu,
 				waitConns:      tt.fields.waitConns,
 				inShutdown:     tt.fields.inShutdown,
