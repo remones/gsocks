@@ -10,9 +10,9 @@ import (
 
 // Command type of request
 const (
-	CmdConnect      = uint8(0x01)
-	CmdBind         = uint8(0x02)
-	CmdUDPAssociate = uint8(0x03)
+	CmdConnect = uint8(0x01)
+	CmdBind    = uint8(0x02)
+	CmdUDP     = uint8(0x03)
 )
 
 // AType represent address type

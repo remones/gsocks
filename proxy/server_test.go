@@ -20,16 +20,7 @@ func Test_server_ListenAndServe(t *testing.T) {
 		name    string
 		fields  fields
 		wantErr bool
-	}{
-		{
-			name: "normal success",
-			fields: fields{
-				addr:      "127.0.0.1:0",
-				waitConns: sync.WaitGroup{},
-			},
-			wantErr: false,
-		},
-	}
+	}{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := &server{

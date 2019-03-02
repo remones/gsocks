@@ -25,5 +25,5 @@ clean:
 	@rm -rf "$(PWD)/bin"
 
 test: lint
-	@go test -covermode=count -coverprofile=coverage.out ./...
+	@go test -p=1 -covermode=count -coverprofile=coverage.out ./...
 	@go tool cover -html=coverage.out

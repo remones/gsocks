@@ -2,9 +2,11 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -17,7 +19,7 @@ func resetAuthenticator() {
 	authenticators = make(map[uint8]Authenticator)
 }
 
-func TestSession_Authenticate(t *testing.T) {
+func TestSessionAuthenticate(t *testing.T) {
 	setAuthenticator(AuthUserPass, &UserPassAuthenticator{
 		accounts: []*UserPasswd{
 			&UserPasswd{
@@ -59,7 +61,7 @@ func TestSession_Authenticate(t *testing.T) {
 	assert.Equal(t, true, gotOk)
 }
 
-func TestSession_ServeConnectCommand(t *testing.T) {
+func TestSession_handleCmdConnect(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -85,12 +87,14 @@ func TestSession_ServeConnectCommand(t *testing.T) {
 	go func() {
 		defer server.Close()
 		s := &Session{
-			Conn: server,
+			Conn:        server,
+			DialTimeout: 3 * time.Second,
 		}
 		s.ServeRequest(context.TODO())
 	}()
-
 	defer client.Close()
+
+	// TODO: 封装这个 sendCmd 的函数
 	_, port, _ := net.SplitHostPort(backendAddr)
 	nPort, _ := strconv.Atoi(port)
 	bPort := make([]byte, 2)
@@ -108,4 +112,57 @@ func TestSession_ServeConnectCommand(t *testing.T) {
 	_, err = client.Read(rsp)
 	assert.NoError(t, err)
 	assert.Equal(t, "hello, world!", string(rsp))
+}
+
+// TODO: 两组
+func TestSession_handleCmdBind(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	clientListenAddr := ln.Addr().String()
+
+	result := make(chan string)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+
+		req := make([]byte, 13)
+		conn.Read(req)
+		result <- string(req)
+	}()
+
+	server, client := net.Pipe()
+	go func() {
+		defer server.Close()
+		s := &Session{
+			Conn:        server,
+			DialTimeout: 3 * time.Second,
+		}
+		s.ServeRequest(context.TODO())
+	}()
+	defer client.Close()
+
+	_, port, _ := net.SplitHostPort(clientListenAddr)
+	nPort, _ := strconv.Atoi(port)
+	bPort := make([]byte, 2)
+	bPort[0] = uint8(nPort >> 8)
+	bPort[1] = uint8(nPort & 255)
+	cmd := []byte{5, 2, 0, 1, 127, 0, 0, 1, bPort[0], bPort[1]}
+	_, err = client.Write(cmd)
+	assert.NoError(t, err)
+
+	reply1 := make([]byte, 10)
+	client.Read(reply1)
+	rport := (int(reply1[8])<<8 | int(reply1[9]))
+
+	connSrv, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", rport))
+	assert.NoError(t, err)
+
+	connSrv.Write([]byte("hello, world!"))
+	assert.Equal(t, "hello, world!", <-result)
 }

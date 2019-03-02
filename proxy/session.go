@@ -37,14 +37,14 @@ var (
 
 // Session is the session of negotiation
 type Session struct {
-	timeout time.Duration
+	DialTimeout time.Duration
 	net.Conn
 }
 
 func newSession(c net.Conn, version uint8, timeout time.Duration) *Session {
 	return &Session{
-		timeout: timeout,
-		Conn:    c,
+		DialTimeout: timeout,
+		Conn:        c,
 	}
 }
 
@@ -96,7 +96,7 @@ func (s *Session) ServeRequest(ctx context.Context) error {
 		err = s.handleCmdConnect(ctx, req)
 	case CmdBind:
 		err = s.handleCmdBind(ctx, req)
-	case CmdUDPAssociate:
+	case CmdUDP:
 		err = s.handleCmdUDP(ctx, req)
 	default:
 		s.sendReply(ReplyInvalidCommand, nil)
@@ -132,7 +132,7 @@ func (s *Session) handleCmdConnect(ctx context.Context, req *Request) error {
 		return ErrResolverFailed
 	}
 
-	dialer := net.Dialer{Timeout: s.timeout}
+	dialer := net.Dialer{Timeout: s.DialTimeout}
 	target, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		errMsg := err.Error()
@@ -178,7 +178,7 @@ func (s *Session) handleCmdBind(ctx context.Context, req *Request) error {
 		return fmt.Errorf("faild to resolve destination address: %v", err)
 	}
 
-	dialer := net.Dialer{Timeout: s.timeout}
+	dialer := net.Dialer{Timeout: s.DialTimeout}
 	target, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		errMsg := err.Error()
@@ -198,7 +198,7 @@ func (s *Session) handleCmdBind(ctx context.Context, req *Request) error {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		// TODO: should add log here
-		if rErr := s.sendReply(ReplyUnassigned, nil); err != nil {
+		if rErr := s.sendReply(ReplyUnassigned, nil); rErr != nil {
 			return ErrSendReplyFailed
 		}
 		return err
@@ -207,7 +207,7 @@ func (s *Session) handleCmdBind(ctx context.Context, req *Request) error {
 	lnhost, lnport, _ := net.SplitHostPort(ln.Addr().String())
 	port, _ := strconv.Atoi(lnport)
 	as := &AddrSpec{
-		IP:   net.IP(lnhost),
+		IP:   net.ParseIP(lnhost),
 		Port: port,
 		Type: TypeIPV4,
 	}
@@ -216,14 +216,10 @@ func (s *Session) handleCmdBind(ctx context.Context, req *Request) error {
 	conn, err := ln.Accept()
 	if err != nil {
 		// TODO: should add log here, and sendReply
-		if rErr := s.sendReply(ReplyFailure, nil); err != nil {
+		if rErr := s.sendReply(ReplyFailure, nil); rErr != nil {
 			return ErrSendReplyFailed
 		}
 		return err
-	} else {
-		if rErr := s.sendReply(ReplySuccessed, nil); err != nil {
-			return ErrSendReplyFailed
-		}
 	}
 
 	errCh := make(chan error)
@@ -282,13 +278,12 @@ func (s *Session) sendReply(code ReplyCode, addr *AddrSpec) error {
 	reply[3] = addrType
 
 	copy(reply[4:n-2], addrBody)
-	copy(reply[n-2:], []byte{uint8(addrPort) >> 8, uint8(addrPort) & 255})
+	copy(reply[n-2:], []byte{uint8(addrPort >> 8), uint8(addrPort) & 255})
 	_, err := s.Write(reply)
 	return err
 }
 
-// TODO(remones): listen on a UDP port
+// TODO(remones)
 func (s *Session) handleCmdUDP(ctx context.Context, req *Request) error {
-	//
 	return nil
 }

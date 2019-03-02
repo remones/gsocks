@@ -111,7 +111,7 @@ func (srv *server) serveSession(ctx context.Context, conn net.Conn) error {
 		return ErrProtoNotSupport
 	}
 
-	sess := newSession(conn, ver)
+	sess := newSession(conn, ver, 30*time.Second)
 	authentic, err := sess.Authenticate()
 	if err != nil {
 		return err
