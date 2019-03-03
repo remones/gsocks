@@ -105,6 +105,17 @@ func (s *Session) ServeRequest(ctx context.Context) error {
 	return err
 }
 
+func startProxy(rw1, rw2 io.ReadWriter, errCh chan<- error) {
+	proxy := func(dst io.Writer, src io.Reader) {
+		_, err := io.Copy(dst, src)
+		if errCh != nil {
+			errCh <- err
+		}
+	}
+	go proxy(rw1, rw2)
+	go proxy(rw2, rw1)
+}
+
 /*
    In the reply to a CONNECT, BND.PORT contains the port number that the
    server assigned to connect to the target host, while BND.ADDR
@@ -152,12 +163,7 @@ func (s *Session) handleCmdConnect(ctx context.Context, req *Request) error {
 	defer target.Close()
 
 	errCh := make(chan error)
-	proxy := func(dst io.Writer, src io.Reader) {
-		_, err := io.Copy(dst, src)
-		errCh <- err
-	}
-	go proxy(target, s.Conn)
-	go proxy(s.Conn, target)
+	startProxy(target, s.Conn, errCh)
 
 	select {
 	case <-ctx.Done():
@@ -223,12 +229,7 @@ func (s *Session) handleCmdBind(ctx context.Context, req *Request) error {
 	}
 
 	errCh := make(chan error)
-	proxy := func(dst io.Writer, src io.Reader) {
-		_, err := io.Copy(dst, src)
-		errCh <- err
-	}
-	go proxy(conn, target)
-	go proxy(target, conn)
+	startProxy(conn, target, errCh)
 
 	select {
 	case <-ctx.Done():
