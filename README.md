@@ -1,3 +1,3 @@
 # gsocks
 
-another showdowsocks implements by Go
+another xxsocks implements by Go
