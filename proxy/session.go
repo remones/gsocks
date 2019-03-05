@@ -133,32 +133,9 @@ func startProxy(rw1, rw2 io.ReadWriter, errCh chan<- error) {
         +----+-----+-------+------+----------+----------+
 */
 func (s *Session) handleCmdConnect(ctx context.Context, req *Request) error {
-	addr, err := req.DestAddr.Resolve(ctx)
+	target, err := s.resolverAndDialAddr(ctx, req.DestAddr)
 	if err != nil {
-		if rErr := s.sendReply(ReplyHostUnreachable, nil); rErr != nil {
-			// TODO: add log here
-			return ErrSendReplyFailed
-		}
-		// TODO: need more log
-		return ErrResolverFailed
-	}
-
-	dialer := net.Dialer{Timeout: s.DialTimeout}
-	target, err := dialer.DialContext(ctx, "tcp", addr)
-	if err != nil {
-		errMsg := err.Error()
-		resp := ReplyHostUnreachable
-		if strings.Contains(errMsg, "refused") {
-			resp = ReplyConnectionRefused
-		} else if strings.Contains(errMsg, "network is unreachable") {
-			resp = ReplyNetworkUnreachable
-		}
-		if rErr := s.sendReply(resp, nil); rErr != nil {
-			// TODO: add log here
-			return ErrSendReplyFailed
-		}
-		// TODO: add log here
-		return ErrResolverFailed
+		return err
 	}
 	defer target.Close()
 
@@ -176,34 +153,14 @@ func (s *Session) handleCmdConnect(ctx context.Context, req *Request) error {
 }
 
 func (s *Session) handleCmdBind(ctx context.Context, req *Request) error {
-	addr, err := req.DestAddr.Resolve(ctx)
+	target, err := s.resolverAndDialAddr(ctx, req.DestAddr)
 	if err != nil {
-		if rErr := s.sendReply(ReplyHostUnreachable, nil); rErr != nil {
-			return fmt.Errorf("faild to send reply: %v", rErr)
-		}
-		return fmt.Errorf("faild to resolve destination address: %v", err)
-	}
-
-	dialer := net.Dialer{Timeout: s.DialTimeout}
-	target, err := dialer.DialContext(ctx, "tcp", addr)
-	if err != nil {
-		errMsg := err.Error()
-		resp := ReplyHostUnreachable
-		if strings.Contains(errMsg, "refused") {
-			resp = ReplyConnectionRefused
-		} else if strings.Contains(errMsg, "network is unreachable") {
-			resp = ReplyNetworkUnreachable
-		}
-		if rErr := s.sendReply(resp, nil); rErr != nil {
-			return fmt.Errorf("faild to send reply: %v", rErr)
-		}
-		return fmt.Errorf("faild to dial destination(%v): %v", addr, err)
+		return err
 	}
 	defer target.Close()
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		// TODO: should add log here
 		if rErr := s.sendReply(ReplyUnassigned, nil); rErr != nil {
 			return ErrSendReplyFailed
 		}
@@ -221,7 +178,6 @@ func (s *Session) handleCmdBind(ctx context.Context, req *Request) error {
 	// TODO: send first reply here
 	conn, err := ln.Accept()
 	if err != nil {
-		// TODO: should add log here, and sendReply
 		if rErr := s.sendReply(ReplyFailure, nil); rErr != nil {
 			return ErrSendReplyFailed
 		}
@@ -239,6 +195,34 @@ func (s *Session) handleCmdBind(ctx context.Context, req *Request) error {
 		err = nErr
 	}
 	return err
+}
+
+func (s *Session) resolverAndDialAddr(ctx context.Context, as *AddrSpec) (net.Conn, error) {
+	addr, err := as.Resolve(ctx)
+	if err != nil {
+		if rErr := s.sendReply(ReplyHostUnreachable, nil); rErr != nil {
+			return nil, ErrSendReplyFailed
+		}
+		return nil, ErrResolverFailed
+	}
+
+	dialer := net.Dialer{Timeout: s.DialTimeout}
+	target, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		errMsg := err.Error()
+		resp := ReplyHostUnreachable
+		if strings.Contains(errMsg, "refused") {
+			resp = ReplyConnectionRefused
+		} else if strings.Contains(errMsg, "network is unreachable") {
+			resp = ReplyNetworkUnreachable
+		}
+		if rErr := s.sendReply(resp, nil); rErr != nil {
+			// TODO: just log here
+			return nil, ErrSendReplyFailed
+		}
+		return nil, ErrResolverFailed
+	}
+	return target, nil
 }
 
 func (s *Session) sendReply(code ReplyCode, addr *AddrSpec) error {
