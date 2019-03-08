@@ -8,7 +8,7 @@ help:
 	@printf "  lint\t\tLinting all source code\n"
 
 build:
-	@mkdir -p bin && go build -i -o ./bin/proxy ./cmd/...
+	@mkdir -p bin && go build -i -o ./bin/proxy ./main.go
 
 lint-misspell:
 	@[ -z "$(shell command -v misspell)" ] && go get -u github.com/client9/misspell/cmd/misspell || true

@@ -8,7 +8,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // ReplyCode ...
@@ -37,14 +36,14 @@ var (
 
 // Session is the session of negotiation
 type Session struct {
-	DialTimeout time.Duration
+	srv *Server
 	net.Conn
 }
 
-func newSession(c net.Conn, version uint8, timeout time.Duration) *Session {
+func (srv *Server) newSession(c net.Conn) *Session {
 	return &Session{
-		DialTimeout: timeout,
-		Conn:        c,
+		srv:  srv,
+		Conn: c,
 	}
 }
 
@@ -55,7 +54,7 @@ func (s *Session) Authenticate() (bool, error) {
 		return false, err
 	}
 	for _, method := range methods {
-		if auth, found := authenticators[method]; found {
+		if auth, found := s.srv.authenticators[AuthType(method)]; found {
 			err := s.ackMethod(method)
 			if err != nil {
 				return false, err
@@ -268,7 +267,6 @@ func (s *Session) sendReply(code ReplyCode, addr *AddrSpec) error {
 	return err
 }
 
-// TODO(remones)
 func (s *Session) handleCmdUDP(ctx context.Context, req *Request) error {
 	return nil
 }

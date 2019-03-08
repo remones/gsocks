@@ -1,9 +1,14 @@
 # GSocks Configuration
 host = "0.0.0.0"
 port = 1080
-auth_methods = ["username_password"]
 
 [auth]
-  [auth.username_password]
-  username = "test"
-  password = "test"
+  methods = ["no_required", "username_password"]
+  [auth.info]
+    [auth.info.username_password]
+      [[auth.info.username_password.account]]
+      username = "test"
+      password = "test"
+      [[auth.info.username_password.account]]
+      username = "dev"
+      password = "dev"

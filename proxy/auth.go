@@ -1,18 +1,69 @@
 package proxy
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 )
 
-// Auth ...
-const (
-	AuthNoRequried  = uint8(0x00)
-	AuthGSSAPI      = uint8(0x01)
-	AuthUserPass    = uint8(0x02)
-	AuthNoAccetable = uint8(0xFF)
+// errors
+var (
+	ErrUnsupportAuthType = errors.New("unsupported auth type")
 )
+
+// AuthType ...
+type AuthType uint8
+
+// AuthType
+const (
+	AuthNoRequried  = AuthType(0x00)
+	AuthGSSAPI      = AuthType(0x01)
+	AuthUserPass    = AuthType(0x02)
+	AuthNoAccetable = AuthType(0xFF)
+)
+
+var authNames = map[AuthType]string{
+	AuthNoRequried: "no_required",
+	AuthGSSAPI:     "gss_api",
+	AuthUserPass:   "username_password",
+}
+
+var authReverseMap = func() map[string]AuthType {
+	m := make(map[string]AuthType)
+	for key, val := range authNames {
+		m[val] = key
+	}
+	return m
+}()
+
+func (at *AuthType) String() string {
+	return authNames[*at]
+}
+
+// GetAuthType ...
+func GetAuthType(name string) (AuthType, bool) {
+	t, ok := authReverseMap[name]
+	return t, ok
+}
+
+func newAuthenticator(name string, info map[string]interface{}) Authenticator {
+	// TODO:
+	switch name {
+	case "username_password":
+		// TODO:
+		acnts := info["accounts"].([]map[string]string)
+		accounts := make([]*userPasswd, len(info["accounts"]))
+		for i, item := range info["accounts"].([]map[string]string) {
+			accounts[i] = &userPasswd{
+				username: item["username"],
+				password: item["password"],
+			}
+		}
+		return &UserPassAuthenticator{accounts}
+	}
+	return nil
+}
 
 // UserPass ...
 const (
@@ -20,10 +71,9 @@ const (
 	UserPassFailure = uint8(0x01)
 )
 
-var authenticators = make(map[uint8]Authenticator)
-
 // Authenticator ...
 type Authenticator interface {
+	Type() AuthType
 	Authenticate(rw io.ReadWriter) (ok bool, err error)
 }
 
@@ -31,14 +81,19 @@ type Authenticator interface {
 type GSSAPIAuthenticate struct{}
 
 // UserPasswd ...
-type UserPasswd struct {
+type userPasswd struct {
 	username string
 	password string
 }
 
 // UserPassAuthenticator ...
 type UserPassAuthenticator struct {
-	accounts []*UserPasswd
+	accounts []*userPasswd
+}
+
+// Type ...
+func (*UserPassAuthenticator) Type() AuthType {
+	return AuthUserPass
 }
 
 // Authenticate ...

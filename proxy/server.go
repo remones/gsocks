@@ -3,10 +3,13 @@ package proxy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/remones/gsocks/config"
 )
 
 // Socks5Version ...
@@ -14,7 +17,7 @@ const Socks5Version = uint8(0x5)
 
 // Errors ...
 var (
-	ErrServerClosed       = errors.New("socks: Server closed")
+	ErrServerClosed       = errors.New("socks: server closed")
 	ErrProtoNotSupport    = errors.New("socks: only support SOCKS5 for now")
 	ErrAuthenticateFailed = errors.New("socks: authenticate failed")
 )
@@ -34,7 +37,8 @@ func (ln *onceCloseListener) close() {
 	ln.closeErr = ln.Listener.Close()
 }
 
-type server struct {
+// Server ...
+type Server struct {
 	addr       string
 	listener   net.Listener
 	mu         sync.Mutex
@@ -42,11 +46,11 @@ type server struct {
 	inShutdown int32
 	doneChan   chan struct{}
 
-	authenticators map[byte]Authenticator
+	authenticators map[AuthType]Authenticator
 }
 
 // ListenAndServe serve the socks server
-func (srv *server) ListenAndServe() error {
+func (srv *Server) ListenAndServe() error {
 	ln, err := net.Listen("tcp", srv.addr)
 	if err != nil {
 		return err
@@ -58,7 +62,7 @@ func (srv *server) ListenAndServe() error {
 	return srv.serve()
 }
 
-func (srv *server) serve() (err error) {
+func (srv *Server) serve() (err error) {
 	if srv.shuttingDown() {
 		return ErrServerClosed
 	}
@@ -92,7 +96,7 @@ func (srv *server) serve() (err error) {
 	}
 }
 
-func (srv *server) serveSession(ctx context.Context, conn net.Conn) error {
+func (srv *Server) serveSession(ctx context.Context, conn net.Conn) error {
 	defer srv.waitConns.Done()
 
 	select {
@@ -111,7 +115,7 @@ func (srv *server) serveSession(ctx context.Context, conn net.Conn) error {
 		return ErrProtoNotSupport
 	}
 
-	sess := newSession(conn, ver, 30*time.Second)
+	sess := srv.newSession(conn)
 	authentic, err := sess.Authenticate()
 	if err != nil {
 		return err
@@ -123,7 +127,7 @@ func (srv *server) serveSession(ctx context.Context, conn net.Conn) error {
 }
 
 // Close the server.
-func (srv *server) Close(ctx context.Context) error {
+func (srv *Server) Close(ctx context.Context) error {
 	atomic.StoreInt32(&srv.inShutdown, 1)
 
 	ch := srv.getDoneChan()
@@ -139,15 +143,36 @@ func (srv *server) Close(ctx context.Context) error {
 	return lnerr
 }
 
-func (srv *server) shuttingDown() bool {
+func (srv *Server) shuttingDown() bool {
 	return atomic.LoadInt32(&srv.inShutdown) != 0
 }
 
-func (srv *server) getDoneChan() chan struct{} {
+func (srv *Server) getDoneChan() chan struct{} {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 	if srv.doneChan == nil {
 		srv.doneChan = make(chan struct{})
 	}
 	return srv.doneChan
+}
+
+// NewServer ...
+func NewServer(cfg *config.Config) *Server {
+	srv := new(Server)
+	srv.addr = fmt.Sprintf("%s:%s", cfg.Host, cfg.Port)
+	srv.authenticators = makeAuthenticators(cfg)
+	return srv
+}
+
+func makeAuthenticators(cfg *config.Config) map[AuthType]Authenticator {
+	auths := make(map[AuthType]Authenticator)
+	for _, a := range cfg.Auth {
+		auth, ok := newAuthenticator(a.Name, a.Info)
+		if !ok {
+			// TODO
+			continue
+		}
+		auths[auth.Type()] = auth
+	}
+	return auths
 }
