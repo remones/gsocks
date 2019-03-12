@@ -205,7 +205,7 @@ func (s *Session) resolverAndDialAddr(ctx context.Context, as *AddrSpec) (net.Co
 		return nil, ErrResolverFailed
 	}
 
-	dialer := net.Dialer{Timeout: s.DialTimeout}
+	dialer := net.Dialer{Timeout: s.srv.DialTimeout}
 	target, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		errMsg := err.Error()

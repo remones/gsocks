@@ -11,23 +11,18 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func setAuthenticator(method uint8, auth Authenticator) {
-	authenticators[method] = auth
-}
-
-func resetAuthenticator() {
-	authenticators = make(map[uint8]Authenticator)
+var testServer = &Server{
+	authenticators: map[AuthType]Authenticator{
+		AuthUserPass: &UserPassAuthenticator{
+			accounts: map[string]string{
+				"si.li": "1234",
+			},
+		},
+	},
+	DialTimeout: 300 * time.Millisecond,
 }
 
 func TestSessionAuthenticate(t *testing.T) {
-	setAuthenticator(AuthUserPass, &UserPassAuthenticator{
-		accounts: []*UserPasswd{
-			&UserPasswd{
-				username: "si.li",
-				password: "1234",
-			},
-		},
-	})
 	server, client := net.Pipe()
 	defer server.Close()
 
@@ -55,6 +50,7 @@ func TestSessionAuthenticate(t *testing.T) {
 
 	s := &Session{
 		Conn: server,
+		srv:  testServer,
 	}
 	gotOk, err := s.Authenticate()
 	assert.NoError(t, err)
@@ -87,8 +83,8 @@ func TestSession_handleCmdConnect(t *testing.T) {
 	go func() {
 		defer server.Close()
 		s := &Session{
-			Conn:        server,
-			DialTimeout: 3 * time.Second,
+			Conn: server,
+			srv:  testServer,
 		}
 		s.ServeRequest(context.TODO())
 	}()
@@ -140,8 +136,8 @@ func TestSession_handleCmdBind(t *testing.T) {
 	go func() {
 		defer server.Close()
 		s := &Session{
-			Conn:        server,
-			DialTimeout: 3 * time.Second,
+			Conn: server,
+			srv:  testServer,
 		}
 		s.ServeRequest(context.TODO())
 	}()

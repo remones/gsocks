@@ -39,14 +39,14 @@ func (ln *onceCloseListener) close() {
 
 // Server ...
 type Server struct {
-	addr       string
-	listener   net.Listener
-	mu         sync.Mutex
-	waitConns  sync.WaitGroup
-	inShutdown int32
-	doneChan   chan struct{}
-
+	addr           string
+	listener       net.Listener
+	mu             sync.Mutex
+	waitConns      sync.WaitGroup
+	inShutdown     int32
+	doneChan       chan struct{}
 	authenticators map[AuthType]Authenticator
+	DialTimeout    time.Duration
 }
 
 // ListenAndServe serve the socks server
@@ -159,20 +159,8 @@ func (srv *Server) getDoneChan() chan struct{} {
 // NewServer ...
 func NewServer(cfg *config.Config) *Server {
 	srv := new(Server)
-	srv.addr = fmt.Sprintf("%s:%s", cfg.Host, cfg.Port)
-	srv.authenticators = makeAuthenticators(cfg)
+	srv.addr = fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	srv.authenticators = makeAuthsWithConfig(&cfg.Auth)
+	srv.DialTimeout = time.Millisecond * time.Duration(cfg.DialTimeout)
 	return srv
-}
-
-func makeAuthenticators(cfg *config.Config) map[AuthType]Authenticator {
-	auths := make(map[AuthType]Authenticator)
-	for _, a := range cfg.Auth {
-		auth, ok := newAuthenticator(a.Name, a.Info)
-		if !ok {
-			// TODO
-			continue
-		}
-		auths[auth.Type()] = auth
-	}
-	return auths
 }

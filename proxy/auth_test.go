@@ -8,7 +8,7 @@ import (
 
 func TestUserPassAuthenticator_Authenticate(t *testing.T) {
 	type fields struct {
-		accounts []*UserPasswd
+		accounts map[string]string
 	}
 	type args struct {
 		rw io.ReadWriter
@@ -24,15 +24,9 @@ func TestUserPassAuthenticator_Authenticate(t *testing.T) {
 		{
 			name: "userpasswd_matched",
 			fields: fields{
-				accounts: []*UserPasswd{
-					&UserPasswd{
-						username: "san.zhang",
-						password: "1234",
-					},
-					&UserPasswd{
-						username: "si.li",
-						password: "1234",
-					},
+				accounts: map[string]string{
+					"san.zhang": "1234",
+					"si.li":     "1234",
 				},
 			},
 			args: args{
@@ -45,11 +39,8 @@ func TestUserPassAuthenticator_Authenticate(t *testing.T) {
 		{
 			name: "userpasswd_unmatch",
 			fields: fields{
-				accounts: []*UserPasswd{
-					&UserPasswd{
-						username: "san.zhang",
-						password: "1234",
-					},
+				accounts: map[string]string{
+					"san.zhang": "1234",
 				},
 			},
 			args: args{

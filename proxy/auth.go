@@ -4,7 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
+
+	"github.com/remones/gsocks/config"
 )
 
 // errors
@@ -23,46 +24,22 @@ const (
 	AuthNoAccetable = AuthType(0xFF)
 )
 
-var authNames = map[AuthType]string{
-	AuthNoRequried: "no_required",
-	AuthGSSAPI:     "gss_api",
-	AuthUserPass:   "username_password",
-}
+func makeAuthsWithConfig(authCfg *config.Auth) map[AuthType]Authenticator {
+	auths := make(map[AuthType]Authenticator)
 
-var authReverseMap = func() map[string]AuthType {
-	m := make(map[string]AuthType)
-	for key, val := range authNames {
-		m[val] = key
-	}
-	return m
-}()
-
-func (at *AuthType) String() string {
-	return authNames[*at]
-}
-
-// GetAuthType ...
-func GetAuthType(name string) (AuthType, bool) {
-	t, ok := authReverseMap[name]
-	return t, ok
-}
-
-func newAuthenticator(name string, info map[string]interface{}) Authenticator {
-	// TODO:
-	switch name {
-	case "username_password":
-		// TODO:
-		acnts := info["accounts"].([]map[string]string)
-		accounts := make([]*userPasswd, len(info["accounts"]))
-		for i, item := range info["accounts"].([]map[string]string) {
-			accounts[i] = &userPasswd{
-				username: item["username"],
-				password: item["password"],
-			}
+	if authCfg.UserPasswd != nil && authCfg.UserPasswd.Enable {
+		accounts := make(map[string]string)
+		for _, account := range authCfg.UserPasswd.Account {
+			accounts[account.Username] = account.Password
 		}
-		return &UserPassAuthenticator{accounts}
+		auths[AuthUserPass] = &UserPassAuthenticator{accounts}
 	}
-	return nil
+
+	if authCfg.NoRequired != nil && authCfg.NoRequired.Enable {
+		auths[AuthNoRequried] = &AuthNoRequired{}
+	}
+	return auths
+	// TODO: add gss_api
 }
 
 // UserPass ...
@@ -80,15 +57,9 @@ type Authenticator interface {
 // GSSAPIAuthenticate ...
 type GSSAPIAuthenticate struct{}
 
-// UserPasswd ...
-type userPasswd struct {
-	username string
-	password string
-}
-
 // UserPassAuthenticator ...
 type UserPassAuthenticator struct {
-	accounts []*userPasswd
+	accounts map[string]string
 }
 
 // Type ...
@@ -125,10 +96,21 @@ func (auth *UserPassAuthenticator) Authenticate(rw io.ReadWriter) (ok bool, err 
 }
 
 func (auth *UserPassAuthenticator) verifyAccount(username, passwd string) (status uint8) {
-	for _, account := range auth.accounts {
-		if strings.Compare(username, account.username) == 0 && strings.Compare(passwd, account.password) == 0 {
-			return UserPassSuccess
-		}
+	if p, ok := auth.accounts[username]; ok && passwd == p {
+		return UserPassSuccess
 	}
 	return UserPassFailure
+}
+
+// AuthNoRequired ...
+type AuthNoRequired struct{}
+
+// Authenticate ...
+func (auth *AuthNoRequired) Authenticate(rw io.ReadWriter) (ok bool, err error) {
+	return true, nil
+}
+
+// Type ...
+func (auth *AuthNoRequired) Type() AuthType {
+	return AuthNoRequried
 }

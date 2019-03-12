@@ -8,27 +8,37 @@ import (
 
 // Config ...
 type Config struct {
-	Host string `toml:"host"`
-	Port uint   `toml:"port"`
-	Auth auth   `toml:"auth"`
+	Host        string `toml:"host"`
+	Port        uint   `toml:"port"`
+	DialTimeout int    `toml:"dial_timeout"`
+	Auth        Auth   `toml:"auth"`
 }
 
-type auth struct {
-	Methods []string  `toml:"methods"`
-	Info    *AuthInfo `toml:"info"`
-}
-
-// AuthInfo ...
-type AuthInfo struct {
+// Auth ...
+type Auth struct {
 	*UserPasswd `toml:"username_password"`
+	*GssAPI     `toml:"gss_api"`
+	*NoRequired `toml:"no_required"`
+}
+
+// GssAPI ...
+type GssAPI struct {
+	Enable bool `toml:"enable"`
+}
+
+// NoRequired ...
+type NoRequired struct {
+	Enable bool `toml:"enable"`
 }
 
 // UserPasswd ...
 type UserPasswd struct {
-	Account []*account `toml:"account"`
+	Enable  bool      `toml:"enable"`
+	Account []Account `toml:"account"`
 }
 
-type account struct {
+// Account ...
+type Account struct {
 	Username string `toml:"username"`
 	Password string `toml:"password"`
 }
@@ -36,8 +46,10 @@ type account struct {
 var defaultConf = Config{
 	Host: "0.0.0.0",
 	Port: 1080,
-	Auth: auth{
-		Methods: []string{"no_required"},
+	Auth: Auth{
+		NoRequired: &NoRequired{
+			Enable: true,
+		},
 	},
 }
 
@@ -57,25 +69,8 @@ func (c *Config) Load(confFile string) error {
 }
 
 func (c *Config) validate() error {
-	methods := c.Auth.Methods
-	i := 0
-	flag := make(map[string]struct{})
-	for _, m := range methods {
-		switch m {
-		case "no_required", "gss_api", "username_password":
-			if _, ok := flag[m]; !ok {
-				methods[i] = m
-				i++
-			}
-		}
-	}
-	c.Auth.Methods = methods[:i]
-
-	if _, exists := flag["username_password"]; exists {
-		if c.Auth.Info == nil || c.Auth.Info.UserPasswd == nil {
-			return fmt.Errorf("[auth]: username_password should be set account information")
-		}
-		for _, account := range c.Auth.Info.UserPasswd.Account {
+	if c.Auth.UserPasswd != nil {
+		for _, account := range c.Auth.UserPasswd.Account {
 			if account.Username == "" {
 				return fmt.Errorf("[auth]: account username can not be empty string")
 			}
