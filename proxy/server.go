@@ -116,6 +116,8 @@ func (srv *Server) serveSession(ctx context.Context, conn net.Conn) error {
 	}
 
 	sess := srv.newSession(conn)
+	defer sess.Close()
+
 	authentic, err := sess.Authenticate()
 	if err != nil {
 		return err

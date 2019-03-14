@@ -8,6 +8,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ReplyCode ...
@@ -174,7 +175,7 @@ func (s *Session) handleCmdBind(ctx context.Context, req *Request) error {
 		Type: TypeIPV4,
 	}
 	s.sendReply(ReplySuccessed, as)
-	// TODO: send first reply here
+
 	conn, err := ln.Accept()
 	if err != nil {
 		if rErr := s.sendReply(ReplyFailure, nil); rErr != nil {
@@ -185,7 +186,6 @@ func (s *Session) handleCmdBind(ctx context.Context, req *Request) error {
 
 	errCh := make(chan error)
 	startProxy(conn, target, errCh)
-
 	select {
 	case <-ctx.Done():
 		s.Close()
@@ -194,6 +194,70 @@ func (s *Session) handleCmdBind(ctx context.Context, req *Request) error {
 		err = nErr
 	}
 	return err
+}
+
+// TODO(remones): support for UDP, UDP connection lifetime must be as same as the TCP.
+func (s *Session) handleCmdUDP(ctx context.Context, req *Request) error {
+	dest, err := req.DestAddr.Resolve(ctx)
+	if err != nil {
+		s.sendReply(ReplyInvalidAddressType, nil)
+		return err
+	}
+	assignAddr, err := net.ResolveUDPAddr("udp", dest)
+	if err != nil {
+		s.sendReply(ReplyUnassigned, nil)
+		return err
+	}
+
+	srvAddr := net.UDPAddr{
+		Port: 0,
+		IP:   net.ParseIP("127.0.0.1"),
+	}
+	srvConn, err := net.ListenUDP("udp", &srvAddr)
+	defer srvConn.Close()
+
+	doneCh := make(chan error)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	// used to close spawned goroutine
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// keep TCP alive
+	go func() {
+		kaReply := []byte{0x00}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := s.Write(kaReply); err != nil {
+					doneCh <- err
+					return
+				}
+			}
+		}
+	}()
+
+	buf := make([]byte, 1024)
+	for {
+		select {
+		case <-ctx.Done():
+			s.Close()
+			return ctx.Err()
+		case err := <-doneCh:
+			return err
+		default:
+		}
+
+		_, cAddr, err := srvConn.ReadFromUDP(buf)
+		if err != nil {
+			return err
+		}
+		if cAddr.Port != assignAddr.Port {
+			return fmt.Errorf("UDP unknow port")
+		}
+	}
 }
 
 func (s *Session) resolverAndDialAddr(ctx context.Context, as *AddrSpec) (net.Conn, error) {
@@ -265,8 +329,4 @@ func (s *Session) sendReply(code ReplyCode, addr *AddrSpec) error {
 	copy(reply[n-2:], []byte{uint8(addrPort >> 8), uint8(addrPort) & 255})
 	_, err := s.Write(reply)
 	return err
-}
-
-func (s *Session) handleCmdUDP(ctx context.Context, req *Request) error {
-	return nil
 }
