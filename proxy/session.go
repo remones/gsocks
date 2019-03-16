@@ -196,7 +196,15 @@ func (s *Session) handleCmdBind(ctx context.Context, req *Request) error {
 	return err
 }
 
-// TODO(remones): support for UDP, UDP connection lifetime must be as same as the TCP.
+/*
+Support for UDP, UDP connection lifetime must be as same as the TCP.
+The UDP request header like it:
++----+------+------+----------+----------+----------+
+|RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
++----+------+------+----------+----------+----------+
+| 2  |  1   |  1   | Variable |    2     | Variable |
++----+------+------+----------+----------+----------+
+*/
 func (s *Session) handleCmdUDP(ctx context.Context, req *Request) error {
 	dest, err := req.DestAddr.Resolve(ctx)
 	if err != nil {
@@ -209,12 +217,26 @@ func (s *Session) handleCmdUDP(ctx context.Context, req *Request) error {
 		return err
 	}
 
-	srvAddr := net.UDPAddr{
+	uAddr := net.UDPAddr{
 		Port: 0,
 		IP:   net.ParseIP("127.0.0.1"),
 	}
-	srvConn, err := net.ListenUDP("udp", &srvAddr)
-	defer srvConn.Close()
+	udpSrvConn, err := net.ListenUDP("udp", &uAddr)
+	if err != nil {
+		s.sendReply(ReplyFailure, nil)
+		return err
+	}
+	defer udpSrvConn.Close()
+
+	srvAddr := udpSrvConn.LocalAddr()
+	lnhost, lnport, _ := net.SplitHostPort(srvAddr.String())
+	port, _ := strconv.Atoi(lnport)
+	as := AddrSpec{
+		IP:   net.ParseIP(lnhost),
+		Port: port,
+		Type: TypeIPV4,
+	}
+	s.sendReply(ReplySuccessed, &as)
 
 	doneCh := make(chan error)
 	ticker := time.NewTicker(time.Second)
@@ -250,7 +272,7 @@ func (s *Session) handleCmdUDP(ctx context.Context, req *Request) error {
 		default:
 		}
 
-		_, cAddr, err := srvConn.ReadFromUDP(buf)
+		_, cAddr, err := udpSrvConn.ReadFromUDP(buf)
 		if err != nil {
 			return err
 		}

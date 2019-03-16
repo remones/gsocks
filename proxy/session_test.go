@@ -90,7 +90,6 @@ func TestSession_handleCmdConnect(t *testing.T) {
 	}()
 	defer client.Close()
 
-	// TODO: 封装这个 sendCmd 的函数
 	_, port, _ := net.SplitHostPort(backendAddr)
 	nPort, _ := strconv.Atoi(port)
 	bPort := make([]byte, 2)
@@ -110,7 +109,6 @@ func TestSession_handleCmdConnect(t *testing.T) {
 	assert.Equal(t, "hello, world!", string(rsp))
 }
 
-// TODO: 两组
 func TestSession_handleCmdBind(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -161,4 +159,17 @@ func TestSession_handleCmdBind(t *testing.T) {
 
 	connSrv.Write([]byte("hello, world!"))
 	assert.Equal(t, "hello, world!", <-result)
+}
+
+func TestSession_handleCmdUDP(t *testing.T) {
+	server, client := net.Pipe()
+	go func() {
+		defer server.Close()
+		s := &Session{
+			Conn: server,
+			srv:  testServer,
+		}
+		s.ServeRequest(context.TODO())
+	}()
+	defer client.Close()
 }
