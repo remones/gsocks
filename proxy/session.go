@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,7 +9,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"time"
+	"sync"
 )
 
 // ReplyCode ...
@@ -205,6 +206,127 @@ The UDP request header like it:
 | 2  |  1   |  1   | Variable |    2     | Variable |
 +----+------+------+----------+----------+----------+
 */
+
+type udpServer struct {
+	*net.UDPConn
+	clientAddr *net.UDPAddr
+	dstMap     map[string][]byte
+	rwmu       sync.RWMutex
+	once       sync.Once
+	doneCh     chan error
+}
+
+func newUDPServer(clientAddr *net.UDPAddr) (*udpServer, error) {
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{
+		Port: 0,
+		IP:   net.ParseIP("127.0.0.1"),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &udpServer{
+		clientAddr: clientAddr,
+		dstMap:     make(map[string][]byte),
+		UDPConn:    conn,
+	}, nil
+}
+
+func (us *udpServer) run(ctx context.Context) error {
+	buf := make([]byte, 1024)
+	buf2 := make([]byte, 1024)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-us.doneCh:
+			return nil
+		default:
+		}
+
+		n, addr, err := us.ReadFromUDP(buf[0:])
+		if err != nil {
+			return err
+		}
+		b := buf[:n]
+		if addr.IP.String() == us.clientAddr.IP.String() {
+			if b[2] != 0x00 {
+				// TODO: for now do not support FRAG, just log it
+				continue
+			}
+			rbuf := bytes.NewBuffer(b[3:])
+			addrSpec, err := readAddrSpec(rbuf)
+			if err != nil {
+				return err
+			}
+			dstIP, err := addrSpec.resolveIPAddr()
+			if err != nil {
+				return err
+			}
+
+			target := net.UDPAddr{
+				IP:   dstIP,
+				Port: addrSpec.Port,
+			}
+			body := rbuf.Bytes()
+			us.WriteToUDP(body, &target)
+
+			header := buf[:n-len(body)]
+			us.setDestHeader(dstIP.String(), header)
+		} else {
+			if h, exist := us.getDestHeader(addr.IP.String()); exist {
+				hLen := len(h)
+				copy(buf2[0:], h[0:hLen])
+				copy(buf2[hLen:], b[0:])
+				_, err := us.WriteToUDP(buf2[0:hLen+n], us.clientAddr)
+				if err != nil {
+					// TODO: log it
+				}
+			} else {
+				// TODO: just log it
+			}
+		}
+	}
+}
+
+func (us *udpServer) setDestHeader(addr string, header []byte) {
+	us.rwmu.Lock()
+	us.dstMap[addr] = header
+	us.rwmu.Unlock()
+}
+
+func (us *udpServer) getDestHeader(addr string) ([]byte, bool) {
+	us.rwmu.RLock()
+	b, exist := us.dstMap[addr]
+	us.rwmu.RUnlock()
+	return b, exist
+}
+
+func (us *udpServer) keepAliveWithTCP(ctx context.Context, tcpConn *net.TCPConn) {
+	tcpConn.SetKeepAlive(true)
+	buf := make([]byte, 1024)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-us.doneCh:
+			return
+		default:
+		}
+		_, err := tcpConn.Read(buf[0:])
+		if err != nil {
+			// TODO: log the error
+			us.close()
+			return
+		}
+	}
+}
+
+func (us *udpServer) close() {
+	us.once.Do(func() {
+		close(us.doneCh)
+	})
+}
+
 func (s *Session) handleCmdUDP(ctx context.Context, req *Request) error {
 	dest, err := req.DestAddr.Resolve(ctx)
 	if err != nil {
@@ -216,19 +338,11 @@ func (s *Session) handleCmdUDP(ctx context.Context, req *Request) error {
 		s.sendReply(ReplyUnassigned, nil)
 		return err
 	}
-
-	uAddr := net.UDPAddr{
-		Port: 0,
-		IP:   net.ParseIP("127.0.0.1"),
-	}
-	udpSrvConn, err := net.ListenUDP("udp", &uAddr)
+	udpSrv, err := newUDPServer(assignAddr)
 	if err != nil {
-		s.sendReply(ReplyFailure, nil)
 		return err
 	}
-	defer udpSrvConn.Close()
-
-	srvAddr := udpSrvConn.LocalAddr()
+	srvAddr := udpSrv.LocalAddr()
 	lnhost, lnport, _ := net.SplitHostPort(srvAddr.String())
 	port, _ := strconv.Atoi(lnport)
 	as := AddrSpec{
@@ -237,49 +351,8 @@ func (s *Session) handleCmdUDP(ctx context.Context, req *Request) error {
 		Type: TypeIPV4,
 	}
 	s.sendReply(ReplySuccessed, &as)
-
-	doneCh := make(chan error)
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	// used to close spawned goroutine
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	// keep TCP alive
-	go func() {
-		kaReply := []byte{0x00}
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if _, err := s.Write(kaReply); err != nil {
-					doneCh <- err
-					return
-				}
-			}
-		}
-	}()
-
-	buf := make([]byte, 1024)
-	for {
-		select {
-		case <-ctx.Done():
-			s.Close()
-			return ctx.Err()
-		case err := <-doneCh:
-			return err
-		default:
-		}
-
-		_, cAddr, err := udpSrvConn.ReadFromUDP(buf)
-		if err != nil {
-			return err
-		}
-		if cAddr.Port != assignAddr.Port {
-			return fmt.Errorf("UDP unknow port")
-		}
-	}
+	go udpSrv.keepAliveWithTCP(ctx, s.Conn.(*net.TCPConn))
+	return udpSrv.run(ctx)
 }
 
 func (s *Session) resolverAndDialAddr(ctx context.Context, as *AddrSpec) (net.Conn, error) {

@@ -22,15 +22,6 @@ const (
 	TypeIPV6 = uint8(0x04)
 )
 
-var (
-	resolver = net.DefaultResolver
-)
-
-// SetResovler sets a custom resolver to replace the original resolver which default is net.DefaultResolver
-func SetResovler(r *net.Resolver) {
-	resolver = r
-}
-
 // AddrSpec ...
 type AddrSpec struct {
 	FQDN string
@@ -88,16 +79,32 @@ func readAddrSpec(r io.Reader) (*AddrSpec, error) {
 
 // Resolve ...
 func (as *AddrSpec) Resolve(ctx context.Context) (string, error) {
-	var ip = as.IP.String()
-	if as.FQDN != "" {
-		ips, err := resolver.LookupHost(ctx, as.FQDN)
-		if err != nil {
-			return "", err
-		}
-		ip = ips[0]
+	ip, err := as.resolveIPAddr()
+	if err != nil {
+		return "", err
 	}
-	addr := net.JoinHostPort(ip, strconv.Itoa(as.Port))
+	addr := net.JoinHostPort(ip.String(), strconv.Itoa(as.Port))
 	return addr, nil
+}
+
+func (as *AddrSpec) resolveIPAddr() (net.IP, error) {
+	var ip = as.IP
+	if as.FQDN != "" {
+		ipAddr, err := net.ResolveIPAddr("ip", as.FQDN)
+		if err != nil {
+			return nil, err
+		}
+		ip = ipAddr.IP
+	}
+	return ip, nil
+}
+
+// Host returns IP or FQDN
+func (as *AddrSpec) Host() string {
+	if as.IP != nil {
+		return string(as.IP)
+	}
+	return as.FQDN
 }
 
 // Request ...

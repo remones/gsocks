@@ -172,4 +172,14 @@ func TestSession_handleCmdUDP(t *testing.T) {
 		s.ServeRequest(context.TODO())
 	}()
 	defer client.Close()
+
+	updConn1, err := net.ListenUDP("udp", &net.UDPAddr{
+		Port: 0,
+		IP:   net.ParseIP("127.0.0.1"),
+	})
+	assert.NoError(t, err)
+	backendAddr := updConn1.LocalAddr()
+	backendHost, backendPort, _ := net.SplitHostPort(backendAddr.String())
+	strconv.Atoi(backendPort)
+	assert.NotNil(t, backendHost)
 }
