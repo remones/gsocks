@@ -99,14 +99,6 @@ func (as *AddrSpec) resolveIPAddr() (net.IP, error) {
 	return ip, nil
 }
 
-// Host returns IP or FQDN
-func (as *AddrSpec) Host() string {
-	if as.IP != nil {
-		return string(as.IP)
-	}
-	return as.FQDN
-}
-
 // Request ...
 type Request struct {
 	Version    uint8
