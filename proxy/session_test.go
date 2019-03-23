@@ -1,7 +1,9 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"strconv"
@@ -159,6 +161,61 @@ func TestSession_handleCmdBind(t *testing.T) {
 
 	connSrv.Write([]byte("hello, world!"))
 	assert.Equal(t, "hello, world!", <-result)
+}
+
+func TestSession_udpServer(t *testing.T) {
+	src := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0}
+	dstCh := make(chan *net.UDPAddr)
+
+	// start dst server
+	go func() {
+		udpAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0}
+		conn, err := net.ListenUDP("udp", udpAddr)
+		assert.NoError(t, err)
+		defer conn.Close()
+
+		dstAddr := conn.LocalAddr().(*net.UDPAddr)
+		dstCh <- dstAddr
+
+		b := make([]byte, 1024)
+		n, addr, err := conn.ReadFromUDP(b)
+		assert.NoError(t, err)
+		assert.Equal(t, "ping", string(b[:n]))
+		conn.WriteTo([]byte("pong"), addr)
+	}()
+
+	srv, err := newUDPServer(src)
+	assert.NoError(t, err)
+
+	ctx := context.Background()
+	go srv.run(ctx)
+
+	// client dial to udp proxy
+	laddr := srv.LocalAddr()
+	srvAddr, err := net.ResolveUDPAddr(laddr.Network(), laddr.String())
+	conn, err := net.DialUDP("udp", src, srvAddr)
+	assert.NoError(t, err)
+	defer conn.Close()
+	*src = *conn.LocalAddr().(*net.UDPAddr)
+
+	// client send udp packet
+	buf := new(bytes.Buffer)
+	buf.Write([]byte{0x00, 0x00, 0x00, 0x01})
+	dstAddr := <-dstCh
+	err = binary.Write(buf, binary.BigEndian, dstAddr.IP.To4())
+	binary.Write(buf, binary.BigEndian, uint16(dstAddr.Port))
+	buf.Write([]byte("ping"))
+	bs := buf.Bytes()
+	conn.Write(bs)
+
+	reply := make([]byte, 1024)
+	n, _, err := conn.ReadFromUDP(reply)
+	assert.NoError(t, err)
+
+	buf = bytes.NewBuffer(reply[3:n])
+	_, err = readAddrSpec(buf)
+	assert.NoError(t, err)
+	assert.Equal(t, "pong", string(buf.Bytes()))
 }
 
 func TestSession_handleCmdUDP(t *testing.T) {

@@ -228,6 +228,7 @@ func newUDPServer(clientAddr *net.UDPAddr) (*udpServer, error) {
 		clientAddr: clientAddr,
 		dstMap:     make(map[string][]byte),
 		UDPConn:    conn,
+		doneCh:     make(chan error, 1),
 	}, nil
 }
 
@@ -248,7 +249,7 @@ func (us *udpServer) run(ctx context.Context) error {
 			return err
 		}
 		b := buf[:n]
-		if addr.IP.String() == us.clientAddr.IP.String() {
+		if addr.IP.String() == us.clientAddr.IP.String() && addr.Port == us.clientAddr.Port {
 			if b[2] != 0x00 {
 				// TODO: for now do not support FRAG, just log it
 				continue
@@ -270,15 +271,14 @@ func (us *udpServer) run(ctx context.Context) error {
 			body := rbuf.Bytes()
 			us.WriteToUDP(body, &target)
 
-			header := buf[:n-len(body)]
+			header := append([]byte(nil), buf[:n-len(body)]...)
 			us.setDestHeader(dstIP.String(), header)
 		} else {
 			if h, exist := us.getDestHeader(addr.IP.String()); exist {
 				hLen := len(h)
 				copy(buf2[0:], h[0:hLen])
 				copy(buf2[hLen:], b[0:])
-				_, err := us.WriteToUDP(buf2[0:hLen+n], us.clientAddr)
-				if err != nil {
+				if _, err := us.WriteToUDP(buf2[0:hLen+n], us.clientAddr); err != nil {
 					// TODO: log it
 				}
 			} else {
