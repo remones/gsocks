@@ -49,6 +49,16 @@ type Server struct {
 	DialTimeout    time.Duration
 }
 
+// NewServer ...
+func NewServer(cfg *config.Config) *Server {
+	return &Server{
+		addr:           fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
+		authenticators: makeAuthsWithConfig(&cfg.Auth),
+		DialTimeout:    time.Millisecond * time.Duration(cfg.DialTimeout),
+		doneChan:       make(chan struct{}),
+	}
+}
+
 // ListenAndServe serve the socks server
 func (srv *Server) ListenAndServe() error {
 	ln, err := net.Listen("tcp", srv.addr)
@@ -156,13 +166,4 @@ func (srv *Server) getDoneChan() chan struct{} {
 		srv.doneChan = make(chan struct{})
 	}
 	return srv.doneChan
-}
-
-// NewServer ...
-func NewServer(cfg *config.Config) *Server {
-	srv := new(Server)
-	srv.addr = fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	srv.authenticators = makeAuthsWithConfig(&cfg.Auth)
-	srv.DialTimeout = time.Millisecond * time.Duration(cfg.DialTimeout)
-	return srv
 }

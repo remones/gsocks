@@ -4,25 +4,57 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/remones/gsocks/config"
+	"github.com/remones/gsocks/proxy"
 	"github.com/spf13/cobra"
 )
 
 var (
-	confFile string
+	cfg     *config.Config
+	cfgFile string
+	version = "v0.1"
 )
 
-var rootCmd = &cobra.Command{
-	Use:   "serve",
-	Short: "Hugo is a very fast static site generator",
-	Long: `A Fast and Flexible Static Site Generator built with
-                love by spf13 and friends in Go.
-                Complete documentation is available at http://hugo.spf13.com`,
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(cmd)
-		fmt.Println(args)
-		cmd.Help()
-		// TODO: load config and run the server
-	},
+var (
+	rootCmd = &cobra.Command{
+		Use: "help",
+	}
+	serveCmd = &cobra.Command{
+		Use:   "serve",
+		Short: "start a gsocks server",
+		Long:  `start a gsocks sever`,
+		Run: func(cmd *cobra.Command, args []string) {
+			srv := proxy.NewServer(cfg)
+			if err := srv.ListenAndServe(); err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
+		},
+	}
+	versionCmd = &cobra.Command{
+		Use:   "version",
+		Short: "Print the version number of gsocks",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println(version)
+		},
+	}
+)
+
+func init() {
+	cobra.OnInitialize(initConfig)
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file")
+	rootCmd.AddCommand(serveCmd)
+	rootCmd.AddCommand(versionCmd)
+}
+
+func initConfig() {
+	if cfgFile != "" && cfg == nil {
+		cfg = config.NewConfig()
+		if err := cfg.Load(cfgFile); err != nil {
+			fmt.Println("Can't read config file: ", err)
+			os.Exit(1)
+		}
+	}
 }
 
 // Execute ...
