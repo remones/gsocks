@@ -3,6 +3,9 @@ package cmd
 import (
 	"fmt"
 	"os"
+    "os/signal"
+    "syscall"
+    "context"
 
 	"github.com/remones/gsocks/config"
 	"github.com/remones/gsocks/proxy"
@@ -25,10 +28,24 @@ var (
 		Long:  `start a gsocks sever`,
 		Run: func(cmd *cobra.Command, args []string) {
 			srv := proxy.NewServer(cfg)
+            idleConnsClosed := make(chan struct{})
+
+            go func() {
+                sigCh := make(chan os.Signal, 1)
+                signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+                <-sigCh
+
+                if err := srv.Close(context.Background()); err != nil {
+                    fmt.Printf("gsocks server Shutdown: %v", err)
+                }
+                close(idleConnsClosed)
+            }()
+
 			if err := srv.ListenAndServe(); err != nil {
 				fmt.Println(err)
 				os.Exit(1)
 			}
+            <-idleConnsClosed
 		},
 	}
 	versionCmd = &cobra.Command{
